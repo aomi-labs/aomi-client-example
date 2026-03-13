@@ -1,8 +1,8 @@
 /**
  * EVM Transaction Signer
  *
- * Handles signing and broadcasting transactions from InlineCall payloads
- * using a local private key via viem.
+ * Handles signing and broadcasting transactions using a local private key
+ * via viem. Accepts WalletTxPayload from @aomi-labs/client directly.
  */
 
 import {
@@ -16,6 +16,7 @@ import {
 } from "viem";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import { mainnet, arbitrum, optimism, base, polygon } from "viem/chains";
+import type { WalletTxPayload } from "@aomi-labs/client";
 
 export interface Signer {
   account: PrivateKeyAccount;
@@ -70,59 +71,12 @@ export function createSigner(privateKey: Hex, rpcUrl: string, chainId: number): 
   };
 }
 
-/**
- * Expected shape of the InlineCall payload for wallet_tx_request.
- * The Aomi agent sends an unsigned transaction in this format.
- */
-export interface TxPayload {
-  to: Hex;
-  value?: string; // wei as decimal string or hex
-  data?: Hex;
-  chainId?: number;
-  gas?: string;
-  gasPrice?: string;
-  maxFeePerGas?: string;
-  maxPriorityFeePerGas?: string;
-  nonce?: number;
-}
-
-/** Parse an InlineCall payload into a TxPayload. */
-export function parseTxPayload(payload: unknown): TxPayload {
-  if (!payload || typeof payload !== "object") {
-    throw new Error("Invalid tx payload: expected an object");
-  }
-  const p = payload as Record<string, unknown>;
-
-  // Handle nested { tx: { ... } } or flat { to, value, data, ... }
-  const tx = (p.tx && typeof p.tx === "object" ? p.tx : p) as Record<string, unknown>;
-
-  if (!tx.to || typeof tx.to !== "string") {
-    throw new Error("Invalid tx payload: missing 'to' address");
-  }
-
-  return {
-    to: tx.to as Hex,
-    value: tx.value != null ? String(tx.value) : undefined,
-    data: tx.data as Hex | undefined,
-    chainId: tx.chainId != null ? Number(tx.chainId) : undefined,
-    gas: tx.gas != null ? String(tx.gas) : undefined,
-    gasPrice: tx.gasPrice != null ? String(tx.gasPrice) : undefined,
-    maxFeePerGas: tx.maxFeePerGas != null ? String(tx.maxFeePerGas) : undefined,
-    maxPriorityFeePerGas: tx.maxPriorityFeePerGas != null ? String(tx.maxPriorityFeePerGas) : undefined,
-    nonce: tx.nonce != null ? Number(tx.nonce) : undefined,
-  };
-}
-
-/** Sign and broadcast a transaction. Returns the tx hash. */
-export async function sendTransaction(signer: Signer, payload: TxPayload): Promise<Hex> {
+/** Sign and broadcast a transaction from a WalletTxPayload. Returns the tx hash. */
+export async function sendTransaction(signer: Signer, payload: WalletTxPayload): Promise<Hex> {
   const hash = await signer.wallet.sendTransaction({
-    to: payload.to,
-    data: payload.data,
+    to: payload.to as Hex,
+    data: payload.data as Hex | undefined,
     value: payload.value ? BigInt(payload.value) : undefined,
-    gas: payload.gas ? BigInt(payload.gas) : undefined,
-    maxFeePerGas: payload.maxFeePerGas ? BigInt(payload.maxFeePerGas) : undefined,
-    maxPriorityFeePerGas: payload.maxPriorityFeePerGas ? BigInt(payload.maxPriorityFeePerGas) : undefined,
-    nonce: payload.nonce,
     chain: signer.wallet.chain,
     account: signer.account,
   });

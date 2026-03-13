@@ -4,16 +4,16 @@ A delta neutral trading bot built with [`@aomi-labs/client`](https://www.npmjs.c
 
 ## How It Works
 
-This bot does **not** call DEX contracts directly. Instead, it uses the Aomi client to communicate with an AI agent backend that handles on-chain execution. The bot is the **brain** (strategy logic), and the Aomi agent is the **hands** (trade execution).
+This bot does **not** call DEX contracts directly. Instead, it uses the Aomi client's `Session` class to communicate with an AI agent backend that handles on-chain execution. The bot is the **brain** (strategy logic), and the Aomi agent is the **hands** (trade execution).
 
 The core loop:
 
 1. Bot decides what to do (buy spot, short perp, rebalance, etc.)
-2. Bot sends a natural-language instruction via `client.sendMessage()`
+2. Bot sends a natural-language instruction via `session.send()`
 3. Aomi backend agent interprets it and prepares an on-chain transaction
-4. Agent returns the unsigned tx as an `InlineCall` system event (`wallet_tx_request`)
-5. Bot signs it locally with a private key (via `viem`) and broadcasts
-6. Bot sends the tx hash back to the agent via `client.sendSystemMessage()`
+4. Session emits a `wallet_tx_request` event with the unsigned transaction
+5. Bot signs it locally with a private key (via `viem`) and calls `session.resolve()`
+6. Agent receives the tx hash and continues
 
 ## Architecture
 
@@ -22,7 +22,7 @@ graph TB
     subgraph Bot["Bot Process (this repo)"]
         IDX["index.ts<br/><i>Main Loop</i>"]
         STR["strategy.ts<br/><i>Delta Neutral Logic</i>"]
-        AGT["agent.ts<br/><i>AomiClient Wrapper</i>"]
+        AGT["agent.ts<br/><i>Session Wrapper</i>"]
         SGN["signer.ts<br/><i>EVM Tx Signing</i>"]
         CFG["config.ts<br/><i>Env Config</i>"]
 
@@ -51,9 +51,9 @@ graph TB
         RPC --> SC
     end
 
-    AGT -->|"sendMessage()<br/><i>natural language</i>"| API
-    AGT -->|"subscribeSSE()"| SSE
-    AGT -->|"sendSystemMessage()<br/><i>tx result</i>"| API
+    AGT -->|"session.send()<br/><i>natural language</i>"| API
+    AGT <-->|"SSE + polling<br/>(managed by Session)"| SSE
+    AGT -->|"session.resolve()<br/><i>tx hash</i>"| API
     SGN -->|"sendTransaction()"| RPC
 
     style Bot fill:#1a1a2e,stroke:#e94560,color:#fff
@@ -70,12 +70,11 @@ sequenceDiagram
     participant Backend as Aomi Backend
     participant Chain as EVM Chain
 
-    Bot->>Backend: createThread()
-    Bot->>Backend: subscribeSSE()
+    Bot->>Backend: new Session({ baseUrl })
 
     loop Every tick
         Note over Strategy,Bot: 1. Fetch market data
-        Bot->>Backend: sendMessage("Get ETH market data")
+        Bot->>Backend: session.send("Get ETH market data")
         Backend-->>Bot: spot=$3200 perp=$3205 apr=12%
 
         Note over Strategy,Bot: 2. Strategy decides
@@ -83,18 +82,18 @@ sequenceDiagram
         Strategy-->>Bot: yes — funding APR > threshold, perp at premium
 
         Note over Strategy,Chain: 3. Open spot long
-        Bot->>Backend: sendMessage("Buy $1000 ETH spot")
-        Backend-->>Bot: InlineCall: wallet_tx_request { to, data, value }
+        Bot->>Backend: session.send("Buy $1000 ETH spot")
+        Backend-->>Bot: wallet_tx_request event { to, data, value }
         Bot->>Chain: sign + broadcast tx
         Chain-->>Bot: txHash + receipt
-        Bot->>Backend: sendSystemMessage({ hash, status })
+        Bot->>Backend: session.resolve(id, { txHash })
 
         Note over Strategy,Chain: 4. Open perp short (hedge)
-        Bot->>Backend: sendMessage("Short $1000 ETH perp")
-        Backend-->>Bot: InlineCall: wallet_tx_request
+        Bot->>Backend: session.send("Short $1000 ETH perp")
+        Backend-->>Bot: wallet_tx_request event
         Bot->>Chain: sign + broadcast tx
         Chain-->>Bot: txHash + receipt
-        Bot->>Backend: sendSystemMessage({ hash, status })
+        Bot->>Backend: session.resolve(id, { txHash })
 
         Note over Strategy: Net delta ≈ 0, collecting funding yield
 
@@ -102,20 +101,22 @@ sequenceDiagram
         Bot->>Strategy: checkRiskLimits(state, market)
         Bot->>Strategy: calcDeltaDrift(state) → 6.2%
         Strategy-->>Bot: rebalance_perp: +$62
-        Bot->>Backend: sendMessage("Increase perp short by $62")
-        Backend-->>Bot: InlineCall → sign → confirm
+        Bot->>Backend: session.send("Increase perp short by $62")
+        Backend-->>Bot: wallet_tx_request → sign → resolve
 
         Note over Strategy,Bot: 6. Exit conditions
         Bot->>Strategy: checkFundingExit(market)
         Strategy-->>Bot: funding negative 3 periods → close_all
-        Bot->>Backend: sendMessage("Close ALL positions")
-        Backend-->>Bot: InlineCall → sign → confirm
+        Bot->>Backend: session.send("Close ALL positions")
+        Backend-->>Bot: wallet_tx_request → sign → resolve
     end
+
+    Bot->>Backend: session.close()
 ```
 
 ## Using `@aomi-labs/client` in Your Own Bot
 
-The Aomi client is a platform-agnostic TypeScript client for the Aomi backend API. Here's how to use it:
+The Aomi client provides a high-level `Session` class that handles polling, SSE, and wallet request lifecycle for you.
 
 ### 1. Install
 
@@ -123,138 +124,97 @@ The Aomi client is a platform-agnostic TypeScript client for the Aomi backend AP
 pnpm add @aomi-labs/client
 ```
 
-### 2. Create a Client
+### 2. Create a Session
 
 ```typescript
-import { AomiClient } from "@aomi-labs/client";
+import { Session } from "@aomi-labs/client";
 
-const client = new AomiClient({
-  baseUrl: "https://aomi.dev",
-  apiKey: "your-api-key",       // optional, for non-default namespaces
-  logger: console,              // optional, for debug output
-});
+const session = new Session(
+  { baseUrl: "https://aomi.dev", apiKey: "your-api-key" },
+  {
+    namespace: "default",
+    publicKey: "0xYourWalletAddress",
+    userState: { address: "0xYourWalletAddress" },
+  },
+);
 ```
 
-### 3. Create a Session
+### 3. Handle Wallet Requests
 
-Every conversation with the agent lives in a session (thread). You generate the ID client-side:
+Register event handlers for transaction signing **before** sending messages:
 
 ```typescript
-const threadId = `my-bot-${Date.now()}`;
-const thread = await client.createThread(threadId, "0xYourWalletAddress");
-const sessionId = thread.session_id;
+import type { WalletRequest, WalletTxPayload } from "@aomi-labs/client";
+
+session.on("wallet_tx_request", async (req: WalletRequest) => {
+  const payload = req.payload as WalletTxPayload;
+  // payload: { to, value?, data?, chainId? }
+
+  try {
+    // Sign and broadcast with your wallet (viem, ethers, etc.)
+    const hash = await walletClient.sendTransaction({
+      to: payload.to,
+      data: payload.data,
+      value: payload.value ? BigInt(payload.value) : undefined,
+    });
+
+    // Report success back to the agent
+    await session.resolve(req.id, { txHash: hash });
+  } catch (err) {
+    // Report failure
+    await session.reject(req.id, err.message);
+  }
+});
 ```
 
 ### 4. Send Messages
 
-Send natural language instructions. The agent interprets them and acts:
+`session.send()` is blocking — it waits for the AI agent to finish processing:
 
 ```typescript
-const response = await client.sendMessage(sessionId, "Buy $500 of ETH spot", {
-  namespace: "default",
-  publicKey: "0xYourWalletAddress",
-  userState: { address: "0x..." },  // pass wallet info
-});
+const result = await session.send("Buy $500 of ETH spot");
 
-// response.messages    — chat messages from the agent
-// response.system_events — InlineCalls, notices, errors
-// response.is_processing — whether the agent is still working
+// result.messages — chat messages from the agent
+// result.title    — session title (if set)
 ```
 
-### 5. Handle System Events (Transaction Signing)
-
-When the agent needs you to sign a transaction, it sends an `InlineCall`:
+### 5. Listen for Other Events
 
 ```typescript
-import { isInlineCall, isSystemNotice, isSystemError } from "@aomi-labs/client";
-
-for (const event of response.system_events ?? []) {
-  if (isInlineCall(event) && event.InlineCall.type === "wallet_tx_request") {
-    const { payload } = event.InlineCall;
-    // payload contains: { to, value, data, chainId, ... }
-
-    // Sign and broadcast with your wallet (viem, ethers, etc.)
-    const hash = await walletClient.sendTransaction(payload);
-
-    // Report the result back to the agent
-    await client.sendSystemMessage(sessionId, JSON.stringify({
-      type: "wallet_tx_result",
-      hash,
-      status: "success",
-    }));
-  }
-}
+session.on("system_notice", ({ message }) => console.log("Notice:", message));
+session.on("system_error", ({ message }) => console.error("Error:", message));
+session.on("processing_start", () => console.log("Agent is thinking..."));
+session.on("processing_end", () => console.log("Agent done."));
 ```
 
-### 6. Subscribe to Real-Time Updates (SSE)
-
-For long-running operations, subscribe to server-sent events:
+### 6. Clean Up
 
 ```typescript
-const unsubscribe = client.subscribeSSE(
-  sessionId,
-  (event) => {
-    // event.type: "title_changed" | "tool_update" | "tool_complete" | "system_notice"
-    console.log("SSE event:", event.type, event);
-  },
-  (error) => console.error("SSE error:", error),
-);
-
-// Later: unsubscribe()
+session.close(); // stops polling, unsubscribes SSE
 ```
 
-### 7. Poll for Completion
+### Session API Reference
 
-If the agent is still processing after `sendMessage`, poll until done:
-
-```typescript
-if (response.is_processing) {
-  let state;
-  do {
-    await new Promise((r) => setTimeout(r, 2000));
-    state = await client.fetchState(sessionId);
-  } while (state.is_processing);
-}
-```
-
-### 8. Session Management
-
-```typescript
-// List all threads for a wallet
-const threads = await client.listThreads("0xYourAddress");
-
-// Rename, archive, delete
-await client.renameThread(sessionId, "My Trading Session");
-await client.archiveThread(sessionId);
-await client.deleteThread(sessionId);
-```
-
-### Full API Reference
-
-| Method | Description |
+| Method / Property | Description |
 |---|---|
-| `createThread(id, publicKey?)` | Create a new session |
-| `sendMessage(sessionId, message, opts?)` | Send a chat message |
-| `sendSystemMessage(sessionId, message)` | Send system data (tx results, state changes) |
-| `fetchState(sessionId)` | Get current session state |
-| `interrupt(sessionId)` | Interrupt agent processing |
-| `subscribeSSE(sessionId, onUpdate, onError?)` | Real-time event stream |
-| `listThreads(publicKey)` | List all sessions |
-| `getThread(sessionId)` | Get a single thread |
-| `deleteThread(sessionId)` | Delete a thread |
-| `renameThread(sessionId, title)` | Rename a thread |
-| `archiveThread(sessionId)` | Archive a thread |
-| `unarchiveThread(sessionId)` | Unarchive a thread |
-| `getSystemEvents(sessionId, count?)` | Fetch system events |
-| `getNamespaces(sessionId, opts?)` | List available namespaces |
-| `getModels(sessionId)` | List available models |
-| `setModel(sessionId, rig, opts?)` | Set model for session |
+| `new Session(clientOpts, sessionOpts)` | Create a new session with managed polling + SSE |
+| `session.send(message)` | Send message, wait for agent to finish (blocking) |
+| `session.sendAsync(message)` | Send message, return immediately |
+| `session.resolve(reqId, result)` | Resolve a wallet request with `{ txHash }` or `{ signature }` |
+| `session.reject(reqId, reason?)` | Reject a wallet request |
+| `session.interrupt()` | Cancel agent's current response |
+| `session.close()` | Close session, stop polling |
+| `session.on(event, handler)` | Listen for events (wallet requests, notices, errors, etc.) |
+| `session.getMessages()` | Get current message history |
+| `session.getPendingRequests()` | Get pending wallet requests |
+| `session.getIsProcessing()` | Check if agent is processing |
+| `session.sessionId` | The session ID |
 
 ## Quick Start
 
 ```bash
-git clone <this-repo>
-cd aomi-client-demo
+git clone https://github.com/aomi-labs/aomi-client-example.git
+cd aomi-client-example
 pnpm install
 cp .env.example .env
 ```
@@ -285,7 +245,7 @@ src/
   config.ts     Environment-based configuration
   types.ts      Shared types (Position, StrategyState, TradeAction, MarketData)
   strategy.ts   Pure strategy logic (entry, rebalance, risk, funding checks)
-  agent.ts      AomiClient wrapper (chat, SSE, tx signing flow)
+  agent.ts      Session wrapper (chat, wallet signing via events)
   signer.ts     EVM transaction signing via viem
 ```
 

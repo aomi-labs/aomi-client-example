@@ -2,6 +2,7 @@
  * Bot configuration — loaded from environment variables with sensible defaults.
  */
 
+import "dotenv/config";
 import type { Hex } from "viem";
 
 export interface BotConfig {

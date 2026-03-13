@@ -23,7 +23,8 @@ import {
   calcDeltaDrift,
   calcTotalEquity,
 } from "./strategy.js";
-import type { MarketData, StrategyState, TradeAction, Position } from "./types.js";
+import { fetchMarketData } from "./market.js";
+import type { StrategyState, TradeAction } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Main
@@ -44,23 +45,15 @@ async function main() {
   let running = true;
 
   // Graceful shutdown
-  const shutdown = async () => {
+  const shutdown = () => {
     console.log("\n[bot] Shutting down...");
     running = false;
-    await agent.shutdown();
+    agent.shutdown();
     printReport(config, state);
     process.exit(0);
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
-
-  // Initialize agent session
-  try {
-    await agent.initialize();
-  } catch (err) {
-    console.error("[bot] Failed to initialize agent:", err);
-    process.exit(1);
-  }
 
   // Introduce the bot's intent to the agent
   await agent.chat(
@@ -80,7 +73,7 @@ async function main() {
     try {
       // 1. Fetch market data
       console.log("\n--- Tick ---");
-      const market = await agent.fetchMarketData(config.token);
+      const market = await fetchMarketData(config.token);
       console.log(
         `[market] ${config.token} spot=$${market.spotPrice} perp=$${market.perpPrice} ` +
         `funding=${market.fundingRate}% apr=${market.fundingRateApr}%`,
@@ -100,7 +93,7 @@ async function main() {
         if (shouldEnter(config, state, market)) {
           console.log("[bot] Entry conditions met — opening delta neutral position");
           const entryActions = getEntryActions(config);
-          await executeActions(agent, entryActions, config, state, market);
+          await executeActions(agent, entryActions);
 
           // Update state to reflect opened positions
           state = {
@@ -138,7 +131,7 @@ async function main() {
       const riskActions = checkRiskLimits(config, state, market);
       if (riskActions.length > 0) {
         console.log("[bot] RISK LIMIT BREACHED");
-        await executeActions(agent, riskActions, config, state, market);
+        await executeActions(agent, riskActions);
         state = { ...state, isActive: false, spot: null, perp: null };
         break;
       }
@@ -162,7 +155,7 @@ async function main() {
       const fundingExitActions = checkFundingExit(config, market, consecutiveNegFunding);
       if (fundingExitActions.length > 0) {
         console.log("[bot] Exiting due to unfavorable funding");
-        await executeActions(agent, fundingExitActions, config, state, market);
+        await executeActions(agent, fundingExitActions);
         state = { ...state, isActive: false, spot: null, perp: null };
         break;
       }
@@ -172,7 +165,7 @@ async function main() {
       if (rebalanceActions.length > 0) {
         const drift = calcDeltaDrift(state);
         console.log(`[bot] Delta drift: ${(drift * 100).toFixed(2)}% — rebalancing`);
-        await executeActions(agent, rebalanceActions, config, state, market);
+        await executeActions(agent, rebalanceActions);
         state = { ...state, lastRebalanceAt: Date.now() };
       }
 
@@ -183,11 +176,6 @@ async function main() {
         `[status] equity=$${equity.toFixed(2)} delta_drift=${(drift * 100).toFixed(2)}% ` +
         `funding_collected=$${state.fundingCollectedUsd.toFixed(2)} pnl=$${state.totalPnlUsd.toFixed(2)}`,
       );
-
-      // Process any system events from SSE and sign pending txs
-      agent.getSystemEvents();
-      await agent.processPendingTransactions();
-
     } catch (err) {
       console.error("[bot] Error in main loop:", err);
     }
@@ -196,7 +184,7 @@ async function main() {
   }
 
   // Final report
-  await agent.shutdown();
+  agent.shutdown();
   printReport(config, state);
 }
 
@@ -204,13 +192,7 @@ async function main() {
 // Helpers
 // ---------------------------------------------------------------------------
 
-async function executeActions(
-  agent: AomiAgent,
-  actions: TradeAction[],
-  _config: BotConfig,
-  _state: StrategyState,
-  _market: MarketData,
-): Promise<void> {
+async function executeActions(agent: AomiAgent, actions: TradeAction[]): Promise<void> {
   for (const action of actions) {
     console.log(`[exec] ${action.type}`, action);
     try {
