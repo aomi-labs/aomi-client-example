@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@aomi-labs/client':
-        specifier: file:/Users/cecilia/Code/aomi-widget/.claude/worktrees/gracious-lalande/packages/client
-        version: file:../../Code/aomi-widget/.claude/worktrees/gracious-lalande/packages/client(viem@2.47.2(typescript@5.9.3))
+        specifier: ^0.1.0
+        version: 0.1.1(viem@2.47.2(typescript@5.9.3))
       dotenv:
         specifier: ^17.3.1
         version: 17.3.1
@@ -33,8 +33,8 @@ packages:
   '@adraffy/ens-normalize@1.11.1':
     resolution: {integrity: sha512-nhCBV3quEgesuf7c7KYfperqSS14T8bYuvJ8PcLJp6znkZpFc0AuW4qBtr8eKVyPPe/8RSr7sglCWPU5eaxwKQ==}
 
-  '@aomi-labs/client@file:../../Code/aomi-widget/.claude/worktrees/gracious-lalande/packages/client':
-    resolution: {directory: ../../Code/aomi-widget/.claude/worktrees/gracious-lalande/packages/client, type: directory}
+  '@aomi-labs/client@0.1.1':
+    resolution: {integrity: sha512-pkiDstpzlFHzwrM4igdnjzhe0Shdx1f8I5GYrWvCxlbi3s/b0cNwkEGvv01oO+rNFFagTboH/cRqQc4jGXXsaQ==}
     hasBin: true
     peerDependencies:
       viem: '>=2.0.0'
@@ -306,7 +306,7 @@ snapshots:
 
   '@adraffy/ens-normalize@1.11.1': {}
 
-  '@aomi-labs/client@file:../../Code/aomi-widget/.claude/worktrees/gracious-lalande/packages/client(viem@2.47.2(typescript@5.9.3))':
+  '@aomi-labs/client@0.1.1(viem@2.47.2(typescript@5.9.3))':
     optionalDependencies:
       viem: 2.47.2(typescript@5.9.3)
 
