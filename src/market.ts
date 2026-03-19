@@ -1,9 +1,8 @@
 /**
  * Market data fetcher — uses GeckoTerminal API for real DEX prices.
  *
- * Optimized to minimize API calls (free tier = 30/min):
- *   - Pool endpoint: price + 24h volume + 24h change in ONE call per tick
- *   - OHLCV: refreshed every ohlcvRefreshMs (default 10 min) for slow MA
+ * Uses the token-specific price endpoint for correctness and pool/OHLCV
+ * endpoints for context and slow moving averages.
  *
  * Fast MA is computed from an in-memory price sample buffer.
  * Slow MA is computed from OHLCV hourly candle closes.
@@ -47,24 +46,34 @@ async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
 // GeckoTerminal fetchers
 // ---------------------------------------------------------------------------
 
-/** Fetch pool data — gives price, 24h volume, and price change in one call. */
-async function fetchPoolData(
+/** Fetch the current token price in USD for the configured risk asset. */
+async function fetchTokenPrice(network: string, address: string): Promise<number> {
+  const url = `${GECKO_BASE}/simple/networks/${network}/token_price/${address}`;
+  const res = await fetchWithRetry(url);
+  if (!res.ok) throw new Error(`GeckoTerminal token price error: ${res.status}`);
+  const data = await res.json();
+  const price = parseFloat(
+    data?.data?.attributes?.token_prices?.[address.toLowerCase()] ?? "0"
+  );
+  if (!price || isNaN(price)) throw new Error(`No token price returned for ${address}`);
+  return price;
+}
+
+/** Fetch pool stats for 24h volume and 24h price change. */
+async function fetchPoolStats(
   network: string,
   pool: string
-): Promise<{ price: number; volume24h: number; priceChange24hPct: number }> {
+): Promise<{ volume24h: number; priceChange24hPct: number }> {
   const url = `${GECKO_BASE}/networks/${network}/pools/${pool}`;
   const res = await fetchWithRetry(url);
   if (!res.ok) throw new Error(`GeckoTerminal pool error: ${res.status}`);
   const data = await res.json();
   const attrs = data?.data?.attributes;
 
-  const price = parseFloat(attrs?.base_token_price_usd ?? "0");
-  if (!price || isNaN(price)) throw new Error("No price from pool data");
-
   const volume24h = parseFloat(attrs?.volume_usd?.h24 ?? "0") || 0;
   const priceChange24hPct = parseFloat(attrs?.price_change_percentage?.h24 ?? "0") || 0;
 
-  return { price, volume24h, priceChange24hPct };
+  return { volume24h, priceChange24hPct };
 }
 
 /** Fetch OHLCV candles from a pool. */
@@ -120,12 +129,16 @@ function calcSMA(values: number[], period: number): number {
 
 /**
  * Fetches current market data including price, MAs, and 24h stats.
- * Uses 1 API call per tick (pool data) + 1 call every ohlcvRefreshMs (OHLCV).
+ * Uses token-specific price data so the strategy is not dependent on pool token ordering.
  */
 export async function fetchMarketData(config: BotConfig): Promise<MarketData> {
-  // 1. Pool data — price + 24h stats in one call
-  const pool = await fetchPoolData(config.geckoNetwork, config.ohlcvPoolAddress);
-  recordPriceSample(pool.price);
+  // 1. Fetch the exact configured risk-asset price.
+  const pricePromise = fetchTokenPrice(config.geckoNetwork, config.riskAssetAddress);
+  const poolStatsPromise = fetchPoolStats(config.geckoNetwork, config.ohlcvPoolAddress)
+    .catch(() => ({ volume24h: 0, priceChange24hPct: 0 }));
+
+  const price = await pricePromise;
+  recordPriceSample(price);
 
   // 2. Refresh OHLCV if stale (every ohlcvRefreshMs, default 10 min)
   const now = Date.now();
@@ -157,17 +170,18 @@ export async function fetchMarketData(config: BotConfig): Promise<MarketData> {
   const maSpreadPct = slowMA > 0 ? ((fastMA - slowMA) / slowMA) * 100 : 0;
 
   // 6. Price change since last tick
-  const priceChangePct = lastPrice > 0 ? ((pool.price - lastPrice) / lastPrice) * 100 : 0;
-  lastPrice = pool.price;
+  const priceChangePct = lastPrice > 0 ? ((price - lastPrice) / lastPrice) * 100 : 0;
+  lastPrice = price;
+  const poolStats = await poolStatsPromise;
 
   return {
-    price: pool.price,
+    price,
     priceChangePct,
     fastMA,
     slowMA,
     fastAboveSlow,
     maSpreadPct,
-    volume24h: pool.volume24h,
-    priceChange24hPct: pool.priceChange24hPct,
+    volume24h: poolStats.volume24h,
+    priceChange24hPct: poolStats.priceChange24hPct,
   };
 }

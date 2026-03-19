@@ -10,7 +10,7 @@
  *   5. Logs portfolio stats and repeats
  */
 
-import { loadConfig } from "./config.js";
+import { getChainLabel, loadConfig } from "./config.js";
 import { AomiAgent } from "./agent.js";
 import { createSigner } from "./signer.js";
 import {
@@ -55,9 +55,12 @@ async function main() {
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
+  await agent.connect();
+
   // Introduce the bot's strategy to the agent
   await agent.chat(
-    `I'm running a momentum/trend-following strategy bot. I hold ${config.riskAsset} as my risk asset and ${config.stableAsset} as my stable asset on Ethereum mainnet. ` +
+    `I'm running a momentum/trend-following strategy bot on ${getChainLabel(config.chainId)}. ` +
+    `I hold ${config.riskAsset} as my risk asset and ${config.stableAsset} as my stable asset. ` +
     `My wallet currently has ~${config.initialRiskAmount} ${config.riskAsset} and ~$${config.initialStableAmount} ${config.stableAsset}. ` +
     `Based on moving average crossover signals, I'll ask you to swap between ${config.riskAsset} and ${config.stableAsset}. ` +
     `You can use any DEX — Uniswap, CoW Swap (gasless via EIP-712), 1inch, or others. ` +

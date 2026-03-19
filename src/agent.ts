@@ -5,8 +5,8 @@
  * Aomi backend agent and handle wallet signing requests (both transactions
  * and EIP-712 typed data).
  *
- * Uses sendAsync() + event listeners for real-time streaming of agent
- * messages and tool calls, matching the CLI's verbose output behavior.
+ * Uses event listeners for real-time streaming of agent messages and tool calls
+ * while preserving blocking trade execution semantics.
  */
 
 import {
@@ -17,7 +17,7 @@ import {
   type WalletTxPayload,
   type WalletEip712Payload,
 } from "@aomi-labs/client";
-import type { BotConfig } from "./config.js";
+import { getChainLabel, type BotConfig } from "./config.js";
 import type { TradeAction } from "./types.js";
 import {
   type Signer,
@@ -104,31 +104,20 @@ export class AomiAgent {
     console.log(`[agent] Wallet connected: ${signer.address} (chain ${config.chainId})`);
   }
 
+  /** Sync wallet state with the backend before the first trading prompt. */
+  async connect(): Promise<void> {
+    await this.session.syncUserState();
+    console.log("[agent] User state synced with backend");
+  }
+
   /**
    * Send a chat message and wait for the agent to finish.
    * Messages and tool calls stream to console in real-time via event listeners.
    */
   async chat(message: string): Promise<AomiMessage[]> {
     console.log(`[agent] >>> ${message.slice(0, 300)}${message.length > 300 ? "..." : ""}`);
-
-    await this.session.sendAsync(message);
-
-    // Wait for processing to end or a wallet request to arrive
-    if (this.session.getIsProcessing()) {
-      await new Promise<void>((resolve) => {
-        const done = () => {
-          this.session.off("processing_end", done);
-          this.session.off("wallet_tx_request", done);
-          this.session.off("wallet_eip712_request", done);
-          resolve();
-        };
-        this.session.on("processing_end", done);
-        this.session.on("wallet_tx_request", done);
-        this.session.on("wallet_eip712_request", done);
-      });
-    }
-
-    return this.session.getMessages();
+    const result = await this.session.send(message);
+    return result.messages;
   }
 
   /** Execute a trade action by sending a rich contextual prompt to the agent. */
@@ -171,6 +160,8 @@ export class AomiAgent {
 
   private async handleTxRequest(req: WalletRequest): Promise<void> {
     const payload = req.payload as WalletTxPayload;
+    const txKind = describeTxRequest(payload);
+    console.log(`[bot] Auto-signing ${txKind}...`);
     console.log(`[signer] Tx request id=${req.id}`);
     console.log(`[signer]   to:    ${payload.to}`);
     console.log(`[signer]   value: ${payload.value ?? "0"}`);
@@ -182,11 +173,13 @@ export class AomiAgent {
       console.log(`[signer] Tx broadcast: ${hash}`);
       const receipt = await waitForReceipt(this.signer, hash);
       await this.session.resolve(req.id, { txHash: hash });
+      console.log(`[bot] Auto-sign complete: ${txKind}.`);
       console.log(
         `[signer] Tx confirmed: block=${receipt.blockNumber} status=${receipt.status}`,
       );
     } catch (err: unknown) {
       const error = err as Error & { shortMessage?: string; details?: string; cause?: Error };
+      console.error(`[bot] Auto-sign failed: ${txKind}.`);
       console.error(`[signer] Tx FAILED:`);
       console.error(`[signer]   message: ${error.message}`);
       if (error.shortMessage) console.error(`[signer]   short:   ${error.shortMessage}`);
@@ -198,6 +191,8 @@ export class AomiAgent {
 
   private async handleEip712Request(req: WalletRequest): Promise<void> {
     const payload = req.payload as WalletEip712Payload;
+    const requestLabel = payload.description ?? payload.typed_data?.primaryType ?? "EIP-712 request";
+    console.log(`[bot] Auto-signing ${requestLabel}...`);
     console.log(`[signer] EIP-712 request id=${req.id}`);
     console.log(`[signer]   desc: ${payload.description ?? "n/a"}`);
     console.log(`[signer]   type: ${payload.typed_data?.primaryType ?? "unknown"}`);
@@ -205,14 +200,29 @@ export class AomiAgent {
     try {
       const signature = await signEip712(this.signer, payload);
       await this.session.resolve(req.id, { signature });
+      console.log(`[bot] Auto-sign complete: ${requestLabel}.`);
       console.log(`[signer] EIP-712 signed: ${signature.slice(0, 20)}...`);
     } catch (err: unknown) {
       const error = err as Error & { shortMessage?: string; details?: string };
+      console.error(`[bot] Auto-sign failed: ${requestLabel}.`);
       console.error(`[signer] EIP-712 FAILED:`);
       console.error(`[signer]   message: ${error.message}`);
       if (error.shortMessage) console.error(`[signer]   short:   ${error.shortMessage}`);
       await this.session.reject(req.id, error.shortMessage ?? error.message);
     }
+  }
+}
+
+function describeTxRequest(payload: WalletTxPayload): string {
+  const selector = payload.data?.slice(0, 10).toLowerCase();
+
+  switch (selector) {
+    case "0x095ea7b3":
+      return "ERC-20 approval transaction";
+    case "0xa9059cbb":
+      return "ERC-20 transfer transaction";
+    default:
+      return "transaction request";
   }
 }
 
@@ -229,6 +239,7 @@ export class AomiAgent {
  */
 function buildPrompt(action: TradeAction, config: BotConfig): string {
   const market = action.market;
+  const chainLabel = getChainLabel(config.chainId);
 
   switch (action.type) {
     case "rotate_to_stable": {
@@ -244,7 +255,7 @@ function buildPrompt(action: TradeAction, config: BotConfig): string {
 
       return (
         `${changePart}currently at $${priceFmt}. ${maPart}${change24h} ` +
-        `Swap ${action.tokenAmount.toFixed(4)} ${config.riskAsset} (~$${usdValue}) for ${config.stableAsset} on Ethereum mainnet. ` +
+        `Swap ${action.tokenAmount.toFixed(4)} ${config.riskAsset} (~$${usdValue}) for ${config.stableAsset} on ${chainLabel}. ` +
         `Find the best route — Uniswap, CoW Swap, or 1inch — keep slippage under ${config.maxSlippage}%.`
       );
     }
@@ -261,7 +272,7 @@ function buildPrompt(action: TradeAction, config: BotConfig): string {
 
       return (
         `${changePart}currently at $${priceFmt}. ${maPart}${change24h} ` +
-        `Swap $${action.usdAmount.toFixed(2)} ${config.stableAsset} for ${config.riskAsset} on Ethereum mainnet. ` +
+        `Swap $${action.usdAmount.toFixed(2)} ${config.stableAsset} for ${config.riskAsset} on ${chainLabel}. ` +
         `Find the best route — Uniswap, CoW Swap, or 1inch — keep slippage under ${config.maxSlippage}%.`
       );
     }
@@ -269,7 +280,7 @@ function buildPrompt(action: TradeAction, config: BotConfig): string {
     case "emergency_exit": {
       return (
         `URGENT: ${action.reason} ` +
-        `Sell ALL remaining ${config.riskAsset} for ${config.stableAsset} immediately on Ethereum mainnet. ` +
+        `Sell ALL remaining ${config.riskAsset} for ${config.stableAsset} immediately on ${chainLabel}. ` +
         `Use the fastest available route — Uniswap, CoW Swap, or 1inch. ` +
         `Slippage up to 2% is acceptable given urgency.`
       );

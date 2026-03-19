@@ -85,3 +85,20 @@ export function loadConfig(): BotConfig {
     debug: env("DEBUG", "false") === "true",
   };
 }
+
+export function getChainLabel(chainId: number): string {
+  switch (chainId) {
+    case 1:
+      return "Ethereum mainnet";
+    case 42161:
+      return "Arbitrum";
+    case 8453:
+      return "Base";
+    case 10:
+      return "Optimism";
+    case 137:
+      return "Polygon";
+    default:
+      return `chain ${chainId}`;
+  }
+}
