@@ -10,8 +10,8 @@ export interface BotConfig {
   aomiBaseUrl: string;
   /** API key for non-default namespaces */
   aomiApiKey?: string;
-  /** Aomi namespace to use (e.g. a specific agent/protocol) */
-  aomiNamespace: string;
+  /** Aomi app to use (e.g. a specific agent/protocol) */
+  aomiApp: string;
   /** Wallet public key */
   publicKey?: string;
 
@@ -51,7 +51,7 @@ export function loadConfig(): BotConfig {
   return {
     aomiBaseUrl: env("AOMI_BASE_URL", "https://aomi.dev"),
     aomiApiKey: process.env.AOMI_API_KEY,
-    aomiNamespace: env("AOMI_NAMESPACE", "default"),
+    aomiApp: env("AOMI_APP", "default"),
     publicKey: process.env.PUBLIC_KEY,
 
     privateKey: env("PRIVATE_KEY") as Hex,

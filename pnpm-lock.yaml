@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@aomi-labs/client':
-        specifier: ^0.1.0
-        version: 0.1.1(viem@2.47.2(typescript@5.9.3))
+        specifier: ^0.1.5
+        version: 0.1.5(typescript@5.9.3)
       dotenv:
         specifier: ^17.3.1
         version: 17.3.1
@@ -33,14 +33,9 @@ packages:
   '@adraffy/ens-normalize@1.11.1':
     resolution: {integrity: sha512-nhCBV3quEgesuf7c7KYfperqSS14T8bYuvJ8PcLJp6znkZpFc0AuW4qBtr8eKVyPPe/8RSr7sglCWPU5eaxwKQ==}
 
-  '@aomi-labs/client@0.1.1':
-    resolution: {integrity: sha512-pkiDstpzlFHzwrM4igdnjzhe0Shdx1f8I5GYrWvCxlbi3s/b0cNwkEGvv01oO+rNFFagTboH/cRqQc4jGXXsaQ==}
+  '@aomi-labs/client@0.1.5':
+    resolution: {integrity: sha512-arRsb+0P8VN0fWw1vdsIf2s1mnkaXXN8A0dKiCJXx1z7wQ2LOKVOFrauccsfOEylacr4AkH6R97WgYDaXrMLdg==}
     hasBin: true
-    peerDependencies:
-      viem: '>=2.0.0'
-    peerDependenciesMeta:
-      viem:
-        optional: true
 
   '@esbuild/aix-ppc64@0.27.4':
     resolution: {integrity: sha512-cQPwL2mp2nSmHHJlCyoXgHGhbEPMrEEU5xhkcy3Hs/O7nGZqEpZ2sUtLaL9MORLtDfRvVl2/3PAuEkYZH0Ty8Q==}
@@ -306,9 +301,14 @@ snapshots:
 
   '@adraffy/ens-normalize@1.11.1': {}
 
-  '@aomi-labs/client@0.1.1(viem@2.47.2(typescript@5.9.3))':
-    optionalDependencies:
+  '@aomi-labs/client@0.1.5(typescript@5.9.3)':
+    dependencies:
       viem: 2.47.2(typescript@5.9.3)
+    transitivePeerDependencies:
+      - bufferutil
+      - typescript
+      - utf-8-validate
+      - zod
 
   '@esbuild/aix-ppc64@0.27.4':
     optional: true

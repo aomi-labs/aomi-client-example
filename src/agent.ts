@@ -34,7 +34,7 @@ export class AomiAgent {
     this.signer = signer;
 
     const sessionOptions: SessionOptions = {
-      namespace: config.aomiNamespace,
+      app: config.aomiApp,
       publicKey: config.publicKey ?? signer.address,
       apiKey: config.aomiApiKey,
       userState: { address: signer.address },
