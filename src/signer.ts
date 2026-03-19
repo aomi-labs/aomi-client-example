@@ -1,8 +1,9 @@
 /**
- * EVM Transaction Signer
+ * EVM Transaction & EIP-712 Signer
  *
  * Handles signing and broadcasting transactions using a local private key
- * via viem. Accepts WalletTxPayload from @aomi-labs/client directly.
+ * via viem. Also supports EIP-712 typed data signing for CoW Protocol
+ * gasless swaps and permits.
  */
 
 import {
@@ -16,7 +17,7 @@ import {
 } from "viem";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import { mainnet, arbitrum, optimism, base, polygon } from "viem/chains";
-import type { WalletTxPayload } from "@aomi-labs/client";
+import type { WalletTxPayload, WalletEip712Payload } from "@aomi-labs/client";
 
 export interface Signer {
   account: PrivateKeyAccount;
@@ -36,7 +37,6 @@ function resolveChain(chainId: number): Chain {
   };
   const chain = chains[chainId];
   if (!chain) {
-    // Fallback: construct a minimal chain config
     return {
       id: chainId,
       name: `Chain ${chainId}`,
@@ -89,4 +89,25 @@ export async function waitForReceipt(signer: Signer, hash: Hex) {
   const receipt = await signer.publicClient.waitForTransactionReceipt({ hash });
   console.log(`[signer] Transaction confirmed: ${hash} (block ${receipt.blockNumber}, status: ${receipt.status})`);
   return receipt;
+}
+
+/** Sign EIP-712 typed data (for CoW Protocol gasless swaps, permits, etc.). Returns the signature. */
+export async function signEip712(signer: Signer, payload: WalletEip712Payload): Promise<Hex> {
+  const typedData = payload.typed_data;
+  if (!typedData) throw new Error("EIP-712 payload missing typed_data");
+
+  // Filter out EIP712Domain from types (viem adds it automatically)
+  const types = { ...typedData.types };
+  delete (types as Record<string, unknown>)["EIP712Domain"];
+
+  const signature = await signer.wallet.signTypedData({
+    account: signer.account,
+    domain: typedData.domain as Record<string, unknown>,
+    types,
+    primaryType: typedData.primaryType ?? "",
+    message: typedData.message ?? {},
+  });
+
+  console.log(`[signer] EIP-712 signed: ${signature.slice(0, 20)}...`);
+  return signature;
 }

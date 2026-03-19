@@ -1,7 +1,7 @@
 {
   "name": "aomi-client-example",
   "version": "1.0.0",
-  "description": "Delta neutral trading bot demo using @aomi-labs/client",
+  "description": "Momentum/trend-following trading bot demo using @aomi-labs/client",
   "type": "module",
   "scripts": {
     "link": "node scripts/link-client.mjs",

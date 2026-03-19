@@ -1,27 +1,24 @@
 /**
- * Delta Neutral Bot — Entry Point
+ * Momentum / Trend-Following Bot — Entry Point
  *
- * Wires together the strategy engine and Aomi agent interface.
+ * Wires together the strategy engine, market data, and Aomi agent interface.
  * Runs a loop that:
- *   1. Fetches market data via the Aomi agent
- *   2. Evaluates strategy conditions (entry, rebalance, risk, funding)
- *   3. Executes trade actions through the agent
- *   4. Logs state and repeats
+ *   1. Fetches real DEX prices from GeckoTerminal
+ *   2. Computes moving averages and trend signals
+ *   3. Evaluates allocation rotations (one step at a time)
+ *   4. Sends rich, context-aware prompts to the Aomi agent for execution
+ *   5. Logs portfolio stats and repeats
  */
 
-import { loadConfig, type BotConfig } from "./config.js";
+import { loadConfig } from "./config.js";
 import { AomiAgent } from "./agent.js";
 import { createSigner } from "./signer.js";
 import {
   createInitialState,
-  shouldEnter,
-  getEntryActions,
-  getRebalanceActions,
-  checkRiskLimits,
-  checkFundingExit,
+  evaluate,
   updateState,
-  calcDeltaDrift,
-  calcTotalEquity,
+  applyTrade,
+  getPortfolioStats,
 } from "./strategy.js";
 import { fetchMarketData } from "./market.js";
 import type { StrategyState, TradeAction } from "./types.js";
@@ -31,17 +28,20 @@ import type { StrategyState, TradeAction } from "./types.js";
 // ---------------------------------------------------------------------------
 
 async function main() {
-  console.log("=== Delta Neutral Bot (Aomi Client Demo) ===\n");
+  console.log("=== Momentum Bot (Aomi Client Demo) ===\n");
 
   const config = loadConfig();
   const signer = createSigner(config.privateKey, config.rpcUrl, config.chainId);
   const agent = new AomiAgent(config, signer);
 
   console.log(`[bot] Wallet: ${signer.address}`);
-  console.log(`[bot] Chain: ${config.chainId} | RPC: ${config.rpcUrl}\n`);
+  console.log(`[bot] Chain: ${config.chainId} | RPC: ${config.rpcUrl}`);
+  console.log(`[bot] Pair: ${config.riskAsset}/${config.stableAsset}`);
+  console.log(`[bot] Fast MA: ${config.fastMaPeriod} ticks | Slow MA: ${config.slowMaPeriod} hours`);
+  console.log(`[bot] Spread threshold: ${config.maSpreadThreshold}% | Max drawdown: ${config.maxDrawdown}%`);
+  console.log(`[bot] Loop interval: ${config.loopIntervalMs / 1000}s\n`);
 
-  let state = createInitialState();
-  let consecutiveNegFunding = 0;
+  let state = createInitialState(config);
   let running = true;
 
   // Graceful shutdown
@@ -49,38 +49,40 @@ async function main() {
     console.log("\n[bot] Shutting down...");
     running = false;
     agent.shutdown();
-    printReport(config, state);
+    printReport(state);
     process.exit(0);
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
-  // Introduce the bot's intent to the agent
+  // Introduce the bot's strategy to the agent
   await agent.chat(
-    `I'm running a delta neutral strategy bot. I will be sending you trade commands for ${config.token}. ` +
-    `The strategy: buy spot + short perp of equal size to collect funding rate yield while staying delta neutral. ` +
-    `Please execute my trade instructions precisely. Confirm each action.`,
+    `I'm running a momentum/trend-following strategy bot. I hold ${config.riskAsset} as my risk asset and ${config.stableAsset} as my stable asset on Ethereum mainnet. ` +
+    `My wallet currently has ~${config.initialRiskAmount} ${config.riskAsset} and ~$${config.initialStableAmount} ${config.stableAsset}. ` +
+    `Based on moving average crossover signals, I'll ask you to swap between ${config.riskAsset} and ${config.stableAsset}. ` +
+    `You can use any DEX — Uniswap, CoW Swap (gasless via EIP-712), 1inch, or others. ` +
+    `I support both regular transaction signing and EIP-712 typed data signing. ` +
+    `Please find the best available route and execute my instructions precisely.`,
   );
 
-  console.log(`[bot] Strategy: delta neutral on ${config.token}`);
-  console.log(`[bot] Position size: $${config.positionSizeUsd} per leg`);
-  console.log(`[bot] Rebalance threshold: ${config.rebalanceThreshold * 100}%`);
-  console.log(`[bot] Min funding APR: ${config.minFundingRateApr}%`);
-  console.log(`[bot] Loop interval: ${config.loopIntervalMs / 1000}s\n`);
-
   // ---------- Main loop ----------
+  let tickCount = 0;
   while (running) {
     try {
+      tickCount++;
+      console.log(`\n--- Tick #${tickCount} ---`);
+
       // 1. Fetch market data
-      console.log("\n--- Tick ---");
-      const market = await fetchMarketData(config.token);
+      const market = await fetchMarketData(config);
       console.log(
-        `[market] ${config.token} spot=$${market.spotPrice} perp=$${market.perpPrice} ` +
-        `funding=${market.fundingRate}% apr=${market.fundingRateApr}%`,
+        `[market] ${config.riskAsset} price=$${market.price.toFixed(2)} ` +
+        `fastMA=$${market.fastMA.toFixed(2)} slowMA=$${market.slowMA.toFixed(2)} ` +
+        `spread=${market.maSpreadPct >= 0 ? "+" : ""}${market.maSpreadPct.toFixed(3)}% ` +
+        `24h=${market.priceChange24hPct >= 0 ? "+" : ""}${market.priceChange24hPct.toFixed(1)}%`,
       );
 
-      if (market.spotPrice === 0) {
-        console.warn("[bot] Could not parse market data, skipping tick");
+      if (market.price === 0) {
+        console.warn("[bot] Could not fetch price, skipping tick");
         await sleep(config.loopIntervalMs);
         continue;
       }
@@ -88,93 +90,44 @@ async function main() {
       // 2. Update state with latest market data
       state = updateState(state, market);
 
-      // 3. If not active, check entry conditions
-      if (!state.isActive) {
-        if (shouldEnter(config, state, market)) {
-          console.log("[bot] Entry conditions met — opening delta neutral position");
-          const entryActions = getEntryActions(config);
-          await executeActions(agent, entryActions);
+      // Set avg entry price on first tick
+      if (state.avgEntryPrice === 0 && state.riskAssetAmount > 0) {
+        state = { ...state, avgEntryPrice: market.price };
+      }
 
-          // Update state to reflect opened positions
-          state = {
-            ...state,
-            isActive: true,
-            spot: {
-              side: "spot",
-              direction: "long",
-              size: config.positionSizeUsd / market.spotPrice,
-              entryPrice: market.spotPrice,
-              notionalUsd: config.positionSizeUsd,
-            },
-            perp: {
-              side: "perp",
-              direction: "short",
-              size: config.positionSizeUsd / market.perpPrice,
-              entryPrice: market.perpPrice,
-              notionalUsd: config.positionSizeUsd,
-            },
-            highWaterMarkUsd: config.positionSizeUsd * 2,
-            lastRebalanceAt: Date.now(),
-          };
-          console.log("[bot] Position opened successfully");
-        } else {
-          console.log("[bot] Entry conditions not met, waiting...");
+      // 3. Evaluate strategy
+      const actions = evaluate(config, state, market);
+
+      if (actions.length > 0) {
+        // 4. Execute action
+        for (const action of actions) {
+          console.log(`[bot] Action: ${action.type} — ${action.reason}`);
+          try {
+            await agent.executeAction(action);
+            // 5. Apply trade to state
+            state = applyTrade(state, action);
+            console.log(`[bot] Trade applied. Allocation: ${state.allocation}`);
+          } catch (err) {
+            console.error(`[bot] Failed to execute ${action.type}:`, err);
+          }
         }
 
-        await sleep(config.loopIntervalMs);
-        continue;
-      }
-
-      // --- Position is active ---
-
-      // 4. Check risk limits (highest priority)
-      const riskActions = checkRiskLimits(config, state, market);
-      if (riskActions.length > 0) {
-        console.log("[bot] RISK LIMIT BREACHED");
-        await executeActions(agent, riskActions);
-        state = { ...state, isActive: false, spot: null, perp: null };
-        break;
-      }
-
-      // 5. Check funding rate
-      if (market.fundingRateApr < 0) {
-        consecutiveNegFunding++;
+        // Break on emergency exit
+        if (actions.some((a) => a.type === "emergency_exit")) {
+          console.log("[bot] Emergency exit executed. Stopping.");
+          break;
+        }
       } else {
-        // Estimate funding payment for this period
-        if (state.perp) {
-          const fundingPayment =
-            Math.abs(market.fundingRate / 100) * state.perp.notionalUsd;
-          state = updateState(state, market, fundingPayment);
-          console.log(
-            `[bot] Funding payment: +$${fundingPayment.toFixed(2)} (total: $${state.fundingCollectedUsd.toFixed(2)})`,
-          );
-        }
-        consecutiveNegFunding = 0;
+        console.log(`[bot] No action needed. Allocation: ${state.allocation}`);
       }
 
-      const fundingExitActions = checkFundingExit(config, market, consecutiveNegFunding);
-      if (fundingExitActions.length > 0) {
-        console.log("[bot] Exiting due to unfavorable funding");
-        await executeActions(agent, fundingExitActions);
-        state = { ...state, isActive: false, spot: null, perp: null };
-        break;
-      }
-
-      // 6. Check rebalance
-      const rebalanceActions = getRebalanceActions(config, state, market);
-      if (rebalanceActions.length > 0) {
-        const drift = calcDeltaDrift(state);
-        console.log(`[bot] Delta drift: ${(drift * 100).toFixed(2)}% — rebalancing`);
-        await executeActions(agent, rebalanceActions);
-        state = { ...state, lastRebalanceAt: Date.now() };
-      }
-
-      // 7. Log status
-      const equity = calcTotalEquity(state, market);
-      const drift = calcDeltaDrift(state);
+      // 6. Log portfolio stats
+      const stats = getPortfolioStats(state, market);
       console.log(
-        `[status] equity=$${equity.toFixed(2)} delta_drift=${(drift * 100).toFixed(2)}% ` +
-        `funding_collected=$${state.fundingCollectedUsd.toFixed(2)} pnl=$${state.totalPnlUsd.toFixed(2)}`,
+        `[portfolio] value=$${stats.totalValue} risk=${stats.riskPct}% ` +
+        `risk_asset=${stats.riskAmount} stables=$${stats.stableAmount} ` +
+        `unrealizedPnL=$${stats.unrealizedPnl} realizedPnL=$${stats.realizedPnl} ` +
+        `drawdown=${stats.drawdownPct}% trades=${stats.trades}`,
       );
     } catch (err) {
       console.error("[bot] Error in main loop:", err);
@@ -185,33 +138,22 @@ async function main() {
 
   // Final report
   agent.shutdown();
-  printReport(config, state);
+  printReport(state);
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-async function executeActions(agent: AomiAgent, actions: TradeAction[]): Promise<void> {
-  for (const action of actions) {
-    console.log(`[exec] ${action.type}`, action);
-    try {
-      await agent.executeAction(action);
-    } catch (err) {
-      console.error(`[exec] Failed to execute ${action.type}:`, err);
-      throw err;
-    }
-  }
-}
-
-function printReport(config: BotConfig, state: StrategyState): void {
+function printReport(state: StrategyState): void {
   console.log("\n=== Bot Report ===");
-  console.log(`Token: ${config.token}`);
-  console.log(`Position size: $${config.positionSizeUsd} per leg`);
-  console.log(`Funding collected: $${state.fundingCollectedUsd.toFixed(2)}`);
-  console.log(`Total PnL: $${state.totalPnlUsd.toFixed(2)}`);
+  console.log(`Allocation: ${state.allocation}`);
+  console.log(`Risk asset: ${state.riskAssetAmount.toFixed(4)} tokens`);
+  console.log(`Stables: $${state.stableAmount.toFixed(2)}`);
+  console.log(`Portfolio value: $${state.portfolioValueUsd.toFixed(2)}`);
+  console.log(`Realized PnL: $${state.realizedPnlUsd.toFixed(2)}`);
   console.log(`High water mark: $${state.highWaterMarkUsd.toFixed(2)}`);
-  console.log(`Active: ${state.isActive}`);
+  console.log(`Total trades: ${state.tradeCount}`);
   console.log("==================\n");
 }
 
