@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "link": "node scripts/link-client.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "start": "tsx src/index.ts",
     "dev": "tsx watch src/index.ts"
   },
@@ -19,6 +21,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.4.0",
+    "prettier": "^3.6.2",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }

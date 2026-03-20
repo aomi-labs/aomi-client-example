@@ -8,10 +8,10 @@
 
 /** Current portfolio allocation bucket. */
 export type AllocationState =
-  | "full_risk"      // 100% risk asset
-  | "reduced_risk"   // ~75% risk / 25% stable
-  | "mostly_stable"  // ~25% risk / 75% stable
-  | "full_stable";   // 100% stables
+  | "full_risk" // 100% risk asset
+  | "reduced_risk" // ~75% risk / 25% stable
+  | "mostly_stable" // ~25% risk / 75% stable
+  | "full_stable"; // 100% stables
 
 // ---------------------------------------------------------------------------
 // Market data

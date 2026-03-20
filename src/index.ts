@@ -37,8 +37,12 @@ async function main() {
   console.log(`[bot] Wallet: ${signer.address}`);
   console.log(`[bot] Chain: ${config.chainId} | RPC: ${config.rpcUrl}`);
   console.log(`[bot] Pair: ${config.riskAsset}/${config.stableAsset}`);
-  console.log(`[bot] Fast MA: ${config.fastMaPeriod} ticks | Slow MA: ${config.slowMaPeriod} hours`);
-  console.log(`[bot] Spread threshold: ${config.maSpreadThreshold}% | Max drawdown: ${config.maxDrawdown}%`);
+  console.log(
+    `[bot] Fast MA: ${config.fastMaPeriod} ticks | Slow MA: ${config.slowMaPeriod} hours`,
+  );
+  console.log(
+    `[bot] Spread threshold: ${config.maSpreadThreshold}% | Max drawdown: ${config.maxDrawdown}%`,
+  );
   console.log(`[bot] Loop interval: ${config.loopIntervalMs / 1000}s\n`);
 
   let state = createInitialState(config);
@@ -60,12 +64,12 @@ async function main() {
   // Introduce the bot's strategy to the agent
   await agent.chat(
     `I'm running a momentum/trend-following strategy bot on ${getChainLabel(config.chainId)}. ` +
-    `I hold ${config.riskAsset} as my risk asset and ${config.stableAsset} as my stable asset. ` +
-    `My wallet currently has ~${config.initialRiskAmount} ${config.riskAsset} and ~$${config.initialStableAmount} ${config.stableAsset}. ` +
-    `Based on moving average crossover signals, I'll ask you to swap between ${config.riskAsset} and ${config.stableAsset}. ` +
-    `You can use any DEX — Uniswap, CoW Swap (gasless via EIP-712), 1inch, or others. ` +
-    `I support both regular transaction signing and EIP-712 typed data signing. ` +
-    `Please find the best available route and execute my instructions precisely.`,
+      `I hold ${config.riskAsset} as my risk asset and ${config.stableAsset} as my stable asset. ` +
+      `My wallet currently has ~${config.initialRiskAmount} ${config.riskAsset} and ~$${config.initialStableAmount} ${config.stableAsset}. ` +
+      `Based on moving average crossover signals, I'll ask you to swap between ${config.riskAsset} and ${config.stableAsset}. ` +
+      `You can use any DEX — Uniswap, CoW Swap (gasless via EIP-712), 1inch, or others. ` +
+      `I support both regular transaction signing and EIP-712 typed data signing. ` +
+      `Please find the best available route and execute my instructions precisely.`,
   );
 
   // ---------- Main loop ----------
@@ -79,9 +83,9 @@ async function main() {
       const market = await fetchMarketData(config);
       console.log(
         `[market] ${config.riskAsset} price=$${market.price.toFixed(2)} ` +
-        `fastMA=$${market.fastMA.toFixed(2)} slowMA=$${market.slowMA.toFixed(2)} ` +
-        `spread=${market.maSpreadPct >= 0 ? "+" : ""}${market.maSpreadPct.toFixed(3)}% ` +
-        `24h=${market.priceChange24hPct >= 0 ? "+" : ""}${market.priceChange24hPct.toFixed(1)}%`,
+          `fastMA=$${market.fastMA.toFixed(2)} slowMA=$${market.slowMA.toFixed(2)} ` +
+          `spread=${market.maSpreadPct >= 0 ? "+" : ""}${market.maSpreadPct.toFixed(3)}% ` +
+          `24h=${market.priceChange24hPct >= 0 ? "+" : ""}${market.priceChange24hPct.toFixed(1)}%`,
       );
 
       if (market.price === 0) {
@@ -128,9 +132,9 @@ async function main() {
       const stats = getPortfolioStats(state, market);
       console.log(
         `[portfolio] value=$${stats.totalValue} risk=${stats.riskPct}% ` +
-        `risk_asset=${stats.riskAmount} stables=$${stats.stableAmount} ` +
-        `unrealizedPnL=$${stats.unrealizedPnl} realizedPnL=$${stats.realizedPnl} ` +
-        `drawdown=${stats.drawdownPct}% trades=${stats.trades}`,
+          `risk_asset=${stats.riskAmount} stables=$${stats.stableAmount} ` +
+          `unrealizedPnL=$${stats.unrealizedPnl} realizedPnL=$${stats.realizedPnl} ` +
+          `drawdown=${stats.drawdownPct}% trades=${stats.trades}`,
       );
     } catch (err) {
       console.error("[bot] Error in main loop:", err);

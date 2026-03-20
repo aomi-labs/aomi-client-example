@@ -18,30 +18,30 @@ export interface BotConfig {
   chainId: number;
 
   // -- Trading pair --
-  riskAsset: string;          // e.g. "wSOL"
-  riskAssetAddress: string;   // on-chain token address
-  stableAsset: string;        // e.g. "USDC"
+  riskAsset: string; // e.g. "wSOL"
+  riskAssetAddress: string; // on-chain token address
+  stableAsset: string; // e.g. "USDC"
   stableAssetAddress: string; // on-chain token address
 
   // -- GeckoTerminal --
-  geckoNetwork: string;       // e.g. "eth"
-  ohlcvPoolAddress: string;   // pool used for OHLCV candle data
+  geckoNetwork: string; // e.g. "eth"
+  ohlcvPoolAddress: string; // pool used for OHLCV candle data
 
   // -- Strategy params --
-  fastMaPeriod: number;       // fast MA window (in samples)
-  slowMaPeriod: number;       // slow MA window (in OHLCV candles)
-  maSpreadThreshold: number;  // % spread to trigger rotation (e.g. 0.5)
-  maxSlippage: number;        // max acceptable slippage % (e.g. 1)
-  maxDrawdown: number;        // max drawdown before emergency exit (e.g. 15)
-  tradeCooldownMs: number;    // minimum time between trades
+  fastMaPeriod: number; // fast MA window (in samples)
+  slowMaPeriod: number; // slow MA window (in OHLCV candles)
+  maSpreadThreshold: number; // % spread to trigger rotation (e.g. 0.5)
+  maxSlippage: number; // max acceptable slippage % (e.g. 1)
+  maxDrawdown: number; // max drawdown before emergency exit (e.g. 15)
+  tradeCooldownMs: number; // minimum time between trades
 
   // -- Portfolio --
-  initialRiskAmount: number;  // starting risk asset balance (tokens)
+  initialRiskAmount: number; // starting risk asset balance (tokens)
   initialStableAmount: number; // starting stable balance (USD)
 
   // -- Bot --
-  loopIntervalMs: number;     // main loop interval
-  ohlcvRefreshMs: number;     // how often to refresh OHLCV data
+  loopIntervalMs: number; // main loop interval
+  ohlcvRefreshMs: number; // how often to refresh OHLCV data
   debug: boolean;
 }
 
@@ -63,12 +63,21 @@ export function loadConfig(): BotConfig {
     chainId: Number(env("CHAIN_ID", "1")),
 
     riskAsset: env("RISK_ASSET", "wSOL"),
-    riskAssetAddress: env("RISK_ASSET_ADDRESS", "0xD31a59c85aE9D8edEFec411D448f90841571b89c"),
+    riskAssetAddress: env(
+      "RISK_ASSET_ADDRESS",
+      "0xD31a59c85aE9D8edEFec411D448f90841571b89c",
+    ),
     stableAsset: env("STABLE_ASSET", "USDC"),
-    stableAssetAddress: env("STABLE_ASSET_ADDRESS", "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"),
+    stableAssetAddress: env(
+      "STABLE_ASSET_ADDRESS",
+      "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    ),
 
     geckoNetwork: env("GECKO_NETWORK", "eth"),
-    ohlcvPoolAddress: env("OHLCV_POOL_ADDRESS", "0x127452f3f9cdc0389b0bf59ce6131aa3bd763598"),
+    ohlcvPoolAddress: env(
+      "OHLCV_POOL_ADDRESS",
+      "0x127452f3f9cdc0389b0bf59ce6131aa3bd763598",
+    ),
 
     fastMaPeriod: Number(env("FAST_MA_PERIOD", "6")),
     slowMaPeriod: Number(env("SLOW_MA_PERIOD", "12")),

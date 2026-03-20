@@ -101,7 +101,9 @@ export class AomiAgent {
     this.session.resolveWallet(signer.address, config.chainId);
 
     console.log(`[agent] Session created: ${this.session.sessionId}`);
-    console.log(`[agent] Wallet connected: ${signer.address} (chain ${config.chainId})`);
+    console.log(
+      `[agent] Wallet connected: ${signer.address} (chain ${config.chainId})`,
+    );
   }
 
   /** Sync wallet state with the backend before the first trading prompt. */
@@ -115,7 +117,9 @@ export class AomiAgent {
    * Messages and tool calls stream to console in real-time via event listeners.
    */
   async chat(message: string): Promise<AomiMessage[]> {
-    console.log(`[agent] >>> ${message.slice(0, 300)}${message.length > 300 ? "..." : ""}`);
+    console.log(
+      `[agent] >>> ${message.slice(0, 300)}${message.length > 300 ? "..." : ""}`,
+    );
     const result = await this.session.send(message);
     return result.messages;
   }
@@ -165,7 +169,9 @@ export class AomiAgent {
     console.log(`[signer] Tx request id=${req.id}`);
     console.log(`[signer]   to:    ${payload.to}`);
     console.log(`[signer]   value: ${payload.value ?? "0"}`);
-    console.log(`[signer]   data:  ${payload.data ? payload.data.slice(0, 20) + "..." : "none"}`);
+    console.log(
+      `[signer]   data:  ${payload.data ? payload.data.slice(0, 20) + "..." : "none"}`,
+    );
     console.log(`[signer]   chain: ${payload.chainId ?? "default"}`);
 
     try {
@@ -178,24 +184,35 @@ export class AomiAgent {
         `[signer] Tx confirmed: block=${receipt.blockNumber} status=${receipt.status}`,
       );
     } catch (err: unknown) {
-      const error = err as Error & { shortMessage?: string; details?: string; cause?: Error };
+      const error = err as Error & {
+        shortMessage?: string;
+        details?: string;
+        cause?: Error;
+      };
       console.error(`[bot] Auto-sign failed: ${txKind}.`);
       console.error(`[signer] Tx FAILED:`);
       console.error(`[signer]   message: ${error.message}`);
-      if (error.shortMessage) console.error(`[signer]   short:   ${error.shortMessage}`);
+      if (error.shortMessage)
+        console.error(`[signer]   short:   ${error.shortMessage}`);
       if (error.details) console.error(`[signer]   details: ${error.details}`);
-      if (error.cause) console.error(`[signer]   cause:   ${error.cause.message}`);
+      if (error.cause)
+        console.error(`[signer]   cause:   ${error.cause.message}`);
       await this.session.reject(req.id, error.shortMessage ?? error.message);
     }
   }
 
   private async handleEip712Request(req: WalletRequest): Promise<void> {
     const payload = req.payload as WalletEip712Payload;
-    const requestLabel = payload.description ?? payload.typed_data?.primaryType ?? "EIP-712 request";
+    const requestLabel =
+      payload.description ??
+      payload.typed_data?.primaryType ??
+      "EIP-712 request";
     console.log(`[bot] Auto-signing ${requestLabel}...`);
     console.log(`[signer] EIP-712 request id=${req.id}`);
     console.log(`[signer]   desc: ${payload.description ?? "n/a"}`);
-    console.log(`[signer]   type: ${payload.typed_data?.primaryType ?? "unknown"}`);
+    console.log(
+      `[signer]   type: ${payload.typed_data?.primaryType ?? "unknown"}`,
+    );
 
     try {
       const signature = await signEip712(this.signer, payload);
@@ -207,7 +224,8 @@ export class AomiAgent {
       console.error(`[bot] Auto-sign failed: ${requestLabel}.`);
       console.error(`[signer] EIP-712 FAILED:`);
       console.error(`[signer]   message: ${error.message}`);
-      if (error.shortMessage) console.error(`[signer]   short:   ${error.shortMessage}`);
+      if (error.shortMessage)
+        console.error(`[signer]   short:   ${error.shortMessage}`);
       await this.session.reject(req.id, error.shortMessage ?? error.message);
     }
   }
@@ -245,13 +263,15 @@ function buildPrompt(action: TradeAction, config: BotConfig): string {
     case "rotate_to_stable": {
       const usdValue = (action.tokenAmount * market.price).toFixed(2);
       const priceFmt = market.price.toFixed(2);
-      const changePart = market.priceChangePct !== 0
-        ? `${config.riskAsset} ${market.priceChangePct > 0 ? "up" : "dropped"} ${Math.abs(market.priceChangePct).toFixed(2)}% recently, `
-        : "";
+      const changePart =
+        market.priceChangePct !== 0
+          ? `${config.riskAsset} ${market.priceChangePct > 0 ? "up" : "dropped"} ${Math.abs(market.priceChangePct).toFixed(2)}% recently, `
+          : "";
       const maPart = `The ${config.fastMaPeriod}-tick MA ($${market.fastMA.toFixed(2)}) ${market.fastAboveSlow ? "is above" : "has crossed below"} the ${config.slowMaPeriod}-hour MA ($${market.slowMA.toFixed(2)}), spread ${market.maSpreadPct >= 0 ? "+" : ""}${market.maSpreadPct.toFixed(3)}%.`;
-      const change24h = market.priceChange24hPct !== 0
-        ? ` 24h change: ${market.priceChange24hPct >= 0 ? "+" : ""}${market.priceChange24hPct.toFixed(1)}%.`
-        : "";
+      const change24h =
+        market.priceChange24hPct !== 0
+          ? ` 24h change: ${market.priceChange24hPct >= 0 ? "+" : ""}${market.priceChange24hPct.toFixed(1)}%.`
+          : "";
 
       return (
         `${changePart}currently at $${priceFmt}. ${maPart}${change24h} ` +
@@ -262,13 +282,15 @@ function buildPrompt(action: TradeAction, config: BotConfig): string {
 
     case "rotate_to_risk": {
       const priceFmt = market.price.toFixed(2);
-      const changePart = market.priceChangePct !== 0
-        ? `${config.riskAsset} ${market.priceChangePct > 0 ? "rallied" : "moved"} ${Math.abs(market.priceChangePct).toFixed(2)}% recently, `
-        : "";
+      const changePart =
+        market.priceChangePct !== 0
+          ? `${config.riskAsset} ${market.priceChangePct > 0 ? "rallied" : "moved"} ${Math.abs(market.priceChangePct).toFixed(2)}% recently, `
+          : "";
       const maPart = `The ${config.fastMaPeriod}-tick MA ($${market.fastMA.toFixed(2)}) has crossed back above the ${config.slowMaPeriod}-hour MA ($${market.slowMA.toFixed(2)}), spread +${market.maSpreadPct.toFixed(3)}%.`;
-      const change24h = market.priceChange24hPct !== 0
-        ? ` 24h change: ${market.priceChange24hPct >= 0 ? "+" : ""}${market.priceChange24hPct.toFixed(1)}%.`
-        : "";
+      const change24h =
+        market.priceChange24hPct !== 0
+          ? ` 24h change: ${market.priceChange24hPct >= 0 ? "+" : ""}${market.priceChange24hPct.toFixed(1)}%.`
+          : "";
 
       return (
         `${changePart}currently at $${priceFmt}. ${maPart}${change24h} ` +

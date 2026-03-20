@@ -62,7 +62,7 @@ export function createInitialState(config: BotConfig): StrategyState {
 
 export function getTargetAllocation(
   market: MarketData,
-  config: BotConfig
+  config: BotConfig,
 ): AllocationState {
   const spread = market.maSpreadPct;
   const threshold = config.maSpreadThreshold;
@@ -89,7 +89,7 @@ export function getTargetAllocation(
 export function evaluate(
   config: BotConfig,
   state: StrategyState,
-  market: MarketData
+  market: MarketData,
 ): TradeAction[] {
   // Need both MAs to have meaningful values
   if (market.fastMA === 0 || market.slowMA === 0) return [];
@@ -100,7 +100,8 @@ export function evaluate(
 
   // Check drawdown emergency exit first
   if (state.highWaterMarkUsd > 0) {
-    const currentValue = state.riskAssetAmount * market.price + state.stableAmount;
+    const currentValue =
+      state.riskAssetAmount * market.price + state.stableAmount;
     const drawdownPct =
       ((state.highWaterMarkUsd - currentValue) / state.highWaterMarkUsd) * 100;
     if (drawdownPct >= config.maxDrawdown && state.riskAssetAmount > 0) {
@@ -163,7 +164,7 @@ export function evaluate(
 
 function getRotationFraction(
   from: AllocationState,
-  to: AllocationState
+  to: AllocationState,
 ): number {
   // Each step moves ~25% of the total portfolio
   // But the fraction of the *current* holding differs based on direction
@@ -176,10 +177,14 @@ function getRotationFraction(
     // reduced_risk → mostly_stable: sell 67% of remaining risk (~50% of original)
     // mostly_stable → full_stable: sell 100% of remaining risk
     switch (from) {
-      case "full_risk": return 0.25;
-      case "reduced_risk": return 0.67;
-      case "mostly_stable": return 1.0;
-      default: return 0;
+      case "full_risk":
+        return 0.25;
+      case "reduced_risk":
+        return 0.67;
+      case "mostly_stable":
+        return 1.0;
+      default:
+        return 0;
     }
   } else {
     // Moving toward risk — deploy fraction of stables
@@ -187,10 +192,14 @@ function getRotationFraction(
     // mostly_stable → reduced_risk: deploy 67% of stables
     // reduced_risk → full_risk: deploy 100% of remaining stables
     switch (from) {
-      case "full_stable": return 0.33;
-      case "mostly_stable": return 0.67;
-      case "reduced_risk": return 1.0;
-      default: return 0;
+      case "full_stable":
+        return 0.33;
+      case "mostly_stable":
+        return 0.67;
+      case "reduced_risk":
+        return 1.0;
+      default:
+        return 0;
     }
   }
 }
@@ -202,7 +211,7 @@ function getRotationFraction(
 /** Recalculate portfolio value and high water mark after market data update. */
 export function updateState(
   state: StrategyState,
-  market: MarketData
+  market: MarketData,
 ): StrategyState {
   const portfolioValueUsd =
     state.riskAssetAmount * market.price + state.stableAmount;
@@ -219,9 +228,13 @@ export function updateState(
 /** Adjust state after a trade is executed. */
 export function applyTrade(
   state: StrategyState,
-  action: TradeAction
+  action: TradeAction,
 ): StrategyState {
-  const updated = { ...state, lastTradeAt: Date.now(), tradeCount: state.tradeCount + 1 };
+  const updated = {
+    ...state,
+    lastTradeAt: Date.now(),
+    tradeCount: state.tradeCount + 1,
+  };
 
   switch (action.type) {
     case "rotate_to_stable": {
@@ -248,7 +261,8 @@ export function applyTrade(
       const totalCost =
         state.avgEntryPrice * state.riskAssetAmount + action.usdAmount;
       const totalTokens = state.riskAssetAmount + tokensReceived;
-      updated.avgEntryPrice = totalTokens > 0 ? totalCost / totalTokens : action.market.price;
+      updated.avgEntryPrice =
+        totalTokens > 0 ? totalCost / totalTokens : action.market.price;
       updated.riskAssetAmount = totalTokens;
       updated.stableAmount = state.stableAmount - action.usdAmount;
       // Move allocation one step toward risk
@@ -313,21 +327,32 @@ export function getPortfolioStats(state: StrategyState, market: MarketData) {
 function buildRotationReason(
   current: AllocationState,
   target: AllocationState,
-  market: MarketData
+  market: MarketData,
 ): string {
-  const direction = allocationIndex(target) > allocationIndex(current) ? "defensive" : "aggressive";
+  const direction =
+    allocationIndex(target) > allocationIndex(current)
+      ? "defensive"
+      : "aggressive";
   const parts: string[] = [];
 
   if (market.priceChangePct !== 0) {
     const dir = market.priceChangePct > 0 ? "up" : "down";
-    parts.push(`price ${dir} ${Math.abs(market.priceChangePct).toFixed(2)}% this tick`);
+    parts.push(
+      `price ${dir} ${Math.abs(market.priceChangePct).toFixed(2)}% this tick`,
+    );
   }
 
-  parts.push(`fast MA $${market.fastMA.toFixed(2)} vs slow MA $${market.slowMA.toFixed(2)}`);
-  parts.push(`spread ${market.maSpreadPct >= 0 ? "+" : ""}${market.maSpreadPct.toFixed(3)}%`);
+  parts.push(
+    `fast MA $${market.fastMA.toFixed(2)} vs slow MA $${market.slowMA.toFixed(2)}`,
+  );
+  parts.push(
+    `spread ${market.maSpreadPct >= 0 ? "+" : ""}${market.maSpreadPct.toFixed(3)}%`,
+  );
 
   if (market.priceChange24hPct !== 0) {
-    parts.push(`24h change ${market.priceChange24hPct >= 0 ? "+" : ""}${market.priceChange24hPct.toFixed(1)}%`);
+    parts.push(
+      `24h change ${market.priceChange24hPct >= 0 ? "+" : ""}${market.priceChange24hPct.toFixed(1)}%`,
+    );
   }
 
   return `${direction} rotation ${current} → ${target}: ${parts.join(", ")}`;

@@ -48,7 +48,11 @@ function resolveChain(chainId: number): Chain {
 }
 
 /** Create a signer from a private key and RPC URL. */
-export function createSigner(privateKey: Hex, rpcUrl: string, chainId: number): Signer {
+export function createSigner(
+  privateKey: Hex,
+  rpcUrl: string,
+  chainId: number,
+): Signer {
   const account = privateKeyToAccount(privateKey);
   const chain = resolveChain(chainId);
 
@@ -72,7 +76,10 @@ export function createSigner(privateKey: Hex, rpcUrl: string, chainId: number): 
 }
 
 /** Sign and broadcast a transaction from a WalletTxPayload. Returns the tx hash. */
-export async function sendTransaction(signer: Signer, payload: WalletTxPayload): Promise<Hex> {
+export async function sendTransaction(
+  signer: Signer,
+  payload: WalletTxPayload,
+): Promise<Hex> {
   const hash = await signer.wallet.sendTransaction({
     to: payload.to as Hex,
     data: payload.data as Hex | undefined,
@@ -87,12 +94,17 @@ export async function sendTransaction(signer: Signer, payload: WalletTxPayload):
 /** Wait for a transaction receipt. */
 export async function waitForReceipt(signer: Signer, hash: Hex) {
   const receipt = await signer.publicClient.waitForTransactionReceipt({ hash });
-  console.log(`[signer] Transaction confirmed: ${hash} (block ${receipt.blockNumber}, status: ${receipt.status})`);
+  console.log(
+    `[signer] Transaction confirmed: ${hash} (block ${receipt.blockNumber}, status: ${receipt.status})`,
+  );
   return receipt;
 }
 
 /** Sign EIP-712 typed data (for CoW Protocol gasless swaps, permits, etc.). Returns the signature. */
-export async function signEip712(signer: Signer, payload: WalletEip712Payload): Promise<Hex> {
+export async function signEip712(
+  signer: Signer,
+  payload: WalletEip712Payload,
+): Promise<Hex> {
   const typedData = payload.typed_data;
   if (!typedData) throw new Error("EIP-712 payload missing typed_data");
 
