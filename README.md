@@ -30,6 +30,100 @@ Current allocation buckets:
 - `mostly_stable`
 - `full_stable`
 
+## Architecture
+
+```mermaid
+graph TB
+    subgraph Bot["Bot Process (this repo)"]
+        IDX["index.ts<br/><i>Main Loop</i>"]
+        STR["strategy.ts<br/><i>Momentum Logic</i>"]
+        MKT["market.ts<br/><i>Price + OHLCV</i>"]
+        AGT["agent.ts<br/><i>Session Wrapper</i>"]
+        SGN["signer.ts<br/><i>Tx + EIP-712 Signing</i>"]
+        CFG["config.ts<br/><i>Env Config</i>"]
+
+        IDX -->|"fetchMarketData()"| MKT
+        IDX -->|"evaluate()"| STR
+        STR -->|"TradeAction[]"| IDX
+        IDX -->|"executeAction()"| AGT
+        AGT -->|"wallet requests"| SGN
+        CFG -.->|"BotConfig"| IDX
+    end
+
+    subgraph Aomi["Aomi Backend"]
+        API["REST API<br/>/api/chat, /api/state"]
+        SSE["SSE Stream<br/>tool updates + notices"]
+        AI["AI Harness<br/><i>EVM Engine + execution planning</i>"]
+    end
+
+    subgraph Data["Market Data"]
+        GECKO["GeckoTerminal<br/>token price + pool stats + OHLCV"]
+    end
+
+    subgraph Chain["Blockchain"]
+        RPC["JSON-RPC"]
+        DEX["DEXs / Routers / Orderflow"]
+    end
+
+    IDX -->|"natural-language trade intent"| API
+    AGT <-->|"polling + SSE"| API
+    AGT <-->|"tool events"| SSE
+    AI --> DEX
+    SGN -->|"sendTransaction / signTypedData"| RPC
+    MKT --> GECKO
+    RPC --> DEX
+```
+
+## Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    participant Market as GeckoTerminal
+    participant Bot as Bot Loop
+    participant Strategy as Strategy Engine
+    participant Agent as Aomi Session
+    participant Backend as Aomi Backend
+    participant Chain as EVM Chain
+
+    Bot->>Agent: resolveWallet(address, chainId)
+    Bot->>Agent: syncUserState()
+
+    loop Every tick
+        Bot->>Market: fetch token price + pool stats
+        Market-->>Bot: price, 24h stats
+        Bot->>Market: refresh OHLCV if stale
+        Market-->>Bot: hourly candles
+
+        Bot->>Strategy: evaluate(config, state, market)
+        Strategy-->>Bot: TradeAction[] or []
+
+        alt No action
+            Bot-->>Bot: log portfolio stats
+        else Action required
+            Bot->>Agent: session.send("Swap risk/stable according to signal")
+            Agent->>Backend: chat request
+            Backend-->>Agent: tool updates / messages
+            Backend-->>Agent: wallet_tx_request or wallet_eip712_request
+
+            alt On-chain transaction
+                Agent->>Chain: auto-sign and broadcast
+                Chain-->>Agent: tx hash + receipt
+                Agent->>Backend: session.resolve(req.id, { txHash })
+            else EIP-712 signature
+                Agent->>Chain: signTypedData
+                Chain-->>Agent: signature
+                Agent->>Backend: session.resolve(req.id, { signature })
+            end
+
+            Backend-->>Agent: final messages
+            Agent-->>Bot: send() completes
+            Bot-->>Bot: applyTrade() + log portfolio stats
+        end
+    end
+
+    Bot->>Agent: session.close()
+```
+
 ## Current Strategy
 
 The strategy in [`src/strategy.ts`](/Users/cecilia/test-aomi-client/aomi-client-example/src/strategy.ts) is a simple momentum rotation model:
