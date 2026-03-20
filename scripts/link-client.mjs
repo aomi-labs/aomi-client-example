@@ -3,9 +3,10 @@
  *
  * Usage:
  *   AOMI_WIDGET_ROOT=/path/to/aomi-widget node scripts/link-client.mjs
+ *   node scripts/link-client.mjs --unlink
  *   pnpm install
  *
- * Without AOMI_WIDGET_ROOT, resets to the published npm version.
+ * Without AOMI_WIDGET_ROOT, or with --unlink, resets to the published npm version.
  */
 
 import { readFileSync, writeFileSync, existsSync } from "fs";
@@ -15,12 +16,14 @@ const pkgPath = join(process.cwd(), "package.json");
 const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
 
 const root = process.env.AOMI_WIDGET_ROOT;
+const shouldUnlink = process.argv.includes("--unlink");
+const publishedClientVersion = "^0.1.5";
 
-if (!root) {
+if (!root || shouldUnlink) {
   if (pkg.dependencies["@aomi-labs/client"]?.startsWith("file:")) {
-    pkg.dependencies["@aomi-labs/client"] = "^0.1.0";
+    pkg.dependencies["@aomi-labs/client"] = publishedClientVersion;
     writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
-    console.log("[link-client] Reset to published @aomi-labs/client ^0.1.0");
+    console.log(`[link-client] Reset to published @aomi-labs/client ${publishedClientVersion}`);
   } else {
     console.log("[link-client] Already using published @aomi-labs/client");
   }

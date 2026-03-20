@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "link": "node scripts/link-client.mjs",
+    "unlink": "node scripts/link-client.mjs --unlink && pnpm install",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "start": "tsx src/index.ts",
@@ -15,13 +16,13 @@
   "license": "ISC",
   "packageManager": "pnpm@10.30.3",
   "dependencies": {
-    "@aomi-labs/client": "^0.1.5",
+    "@aomi-labs/client": "^0.1.6",
     "dotenv": "^17.3.1",
-    "viem": "^2.47.1"
+    "viem": "^2.47.5"
   },
   "devDependencies": {
-    "@types/node": "^25.4.0",
-    "prettier": "^3.6.2",
+    "@types/node": "^25.5.0",
+    "prettier": "^3.8.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }
