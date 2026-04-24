@@ -339,3 +339,20 @@ If you need gasless order flows or permits, also register `wallet_eip712_request
 - The trade prompt is natural language; route selection is delegated to the Aomi agent.
 - The current code logs market, action, and portfolio lines on every loop.
 - Graceful shutdown prints a final portfolio report.
+
+## FAQ
+
+**Can I use `@aomi-labs/client` for a different strategy or use case?**
+Yes. This repo is a reference implementation for a specific momentum rotation model, but `@aomi-labs/client` is general-purpose — use it to send any natural-language request to the Aomi backend and auto-sign the resulting wallet requests. Swap out `src/strategy.ts` and `src/market.ts` for your own logic and data sources.
+
+**Which chains does the bot support?**
+EVM-compatible chains today. `src/config.ts` ships with labels for Ethereum (1), Arbitrum (42161), Base (8453), Optimism (10), and Polygon (137). Set the active chain via the `CHAIN_ID` env var and provide an `RPC_URL` for that chain.
+
+**Does the bot ever send my private key remotely?**
+No. The bot reads `PRIVATE_KEY` from your local `.env` and signs transactions locally with `viem`. The private key is never sent to the Aomi backend or any external signer.
+
+**What's the difference between `@aomi-labs/client` and `@aomi-labs/widget-lib`?**
+`@aomi-labs/client` is the TypeScript SDK for programmatic use — agents, bots, servers, and scripts. `@aomi-labs/widget-lib` is the React widget (`<AomiFrame />`) for embedding a chat UX in a user-facing app. This bot uses the client; apps that want a drop-in conversational assistant use the widget.
+
+**Does the bot retry if the Aomi backend or GeckoTerminal fails?**
+Partially. GeckoTerminal `429` responses are retried with backoff, and if an OHLCV refresh fails, cached candles are reused. Chat and execution retries are not built in — check the logs and re-run if a session errors out.
