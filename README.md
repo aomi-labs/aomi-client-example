@@ -2,11 +2,11 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE) [![npm version](https://img.shields.io/npm/v/@aomi-labs/client.svg)](https://www.npmjs.com/package/@aomi-labs/client) [![TypeScript](https://img.shields.io/badge/TypeScript-5%2B-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 
-> Example trading bot showing how to integrate `@aomi-labs/client` — the TypeScript SDK for Aomi, open-source AI blockchain infrastructure for executing on-chain transactions.
+> Example trading bot showing how to integrate `@aomi-labs/client` — the TypeScript SDK for Aomi, open-source AI infrastructure for automating crypto.
 
 ## What is this?
 
-This repository is a reference implementation built on `@aomi-labs/client`, the TypeScript SDK for Aomi — open-source AI blockchain infrastructure for executing on-chain transactions. The bot rotates between a risk asset and a stable asset using moving-average signals, sending natural-language trade instructions to the Aomi backend and auto-signing the resulting on-chain transactions and EIP-712 payloads locally.
+This repository is a reference implementation built on `@aomi-labs/client`, the TypeScript SDK for Aomi — open-source AI infrastructure for automating crypto. The bot rotates between a risk asset and a stable asset using moving-average signals, sending natural-language trade instructions to the Aomi backend and auto-signing the resulting on-chain transactions and EIP-712 payloads locally.
 
 This repo shows how to:
 
